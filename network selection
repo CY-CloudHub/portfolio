@@ -8,29 +8,6 @@ import statistics
 import csv
 import networkx as nx
 
-with open('/home/cyulee/lihc/All_genes_in_LIHC.txt') as f:
-    lines = f.readlines()
-    lines = lines[0]
-    gene_name = lines.split('\t')
-    
-name_comb = list(combinations(gene_name,2))
-#print('comb:', len(name_comb), name_comb[0:10])
-
-# reading the file
-my_file = open("/home/cyulee/lihc/All_gene_pair_interaction_z-score_for_LIHC_updated.txt", "r")
-data = my_file.read()
-data_into_list = data.split()
-
-pair_z = []
-for i in data_into_list:
-    a = i.split('|')
-    pair_z.append(a[2])
-
-gene_pair = []
-for i in range(len(name_comb)):
-    gene_pair.append((name_comb[i],pair_z[i]))
-#print('data:', len(gene_pair), gene_pair[0:10])
-
 def cc_count(genes):
     G = nx.Graph()
     G.add_edges_from(genes)
@@ -164,17 +141,27 @@ def cutoff(data,cut1,cut2):
     
     return [harm_genepair,protect_genepair,harm_degree_name,protect_degree_name]
 
+with open('/home/cyulee/lihc/All_genes_in_LIHC.txt') as f:
+    lines = f.readlines()
+    lines = lines[0]
+    gene_name = lines.split('\t')
+    
+name_comb = list(combinations(gene_name,2))
 
+# reading the file
+my_file = open("/home/cyulee/lihc/All_gene_pair_interaction_z-score_for_LIHC_updated.txt", "r")
+data = my_file.read()
+data_into_list = data.split()
+
+pair_z = []
+for i in data_into_list:
+    a = i.split('|')
+    pair_z.append(a[2])
+
+gene_pair = []
+for i in range(len(name_comb)):
+    gene_pair.append((name_comb[i],pair_z[i]))
+
+#implement cutoff function 
 a = cutoff(gene_pair,3.2,2.97)
 
-s = ['harm_genepair.txt', 'protect_genepair.txt','harm_degree_name.txt','protect_degree_name.txt']
-
-for i in range(len(s)):
-    with open(s[i],'w',newline='') as wfile:
-        writer = csv.writer(wfile)
-        writer.writerow(a[i])
-
-
-wfile.close()
-f.close()
-my_file.close()
