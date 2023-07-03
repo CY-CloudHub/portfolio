@@ -1,0 +1,42 @@
+import multiprocessing as mp
+import time
+import numpy as np
+from scipy import stats 
+import pandas as pd
+import json
+import scipy.stats as stats
+harm_matrix = pd.read_csv('whole_harm_matrix.csv')
+harm_matrix['sum'] = harm_matrix.sum(axis = 1)
+with open('gobp.json') as json_file:
+    godict = json.load(json_file)
+
+def hypergeometric_test(godict, w1, non_w1):
+    GO_list = list(godict.keys())
+    result = []
+    for i in range(len(GO_list)):
+        genelist = godict[GO_list[i]]['geneSymbols']
+        tmp = w1
+        tmp['gene1_bin'] = np.where(tmp['gene1'].isin(genelist),1,0)
+        tmp['gene2_bin'] = np.where(tmp['gene2'].isin(genelist),1,0)
+        tmp['check'] = tmp.gene1_bin + tmp.gene2_bin
+        if np.where(tmp['check'] == 2,1,0).sum() != 0: 
+            #print(GO_list[i])
+            base_list = non_w1
+            base_list['gene1_bin'] = np.where(base_list['gene1'].isin(genelist),1,0)
+            base_list['gene2_bin'] = np.where(base_list['gene2'].isin(genelist),1,0)
+            base_list['check'] = base_list.gene1_bin + base_list.gene2_bin
+            a = len(tmp[tmp['check'] == 2])
+            b = len(base_list[base_list['check'] == 2])
+            c = len(tmp) - a
+            d = len(base_list) - b
+            table = [[a,b],[c,d]]
+            odds, p_value = stats.fisher_exact(table, alternative='greater') 
+            #print(p_value)
+            if p_value <= 0.05:
+                result.append([GO_list[i], godict[GO_list[i]]['function'], p_value])
+                #result[GO_list[i]] = {'function': godict[GO_list[i]]['function'], 'p_value': p_value}
+    return result
+
+w1_harm = harm_matrix.loc[harm_matrix['sum'] == 1][['gene1','gene2']]
+non_w1_harm = harm_matrix.loc[harm_matrix['sum'] != 1][['gene1','gene2']]
+result_h = hypergeometric_test(godict, w1_harm, non_w1_harm)
