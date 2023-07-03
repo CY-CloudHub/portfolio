@@ -1,0 +1,76 @@
+from itertools import combinations
+import time
+import random
+import numpy as np
+from scipy import stats 
+from numpy.random import seed
+from numpy.random import randn
+from numpy.random import normal
+import pandas as pd
+from scipy.stats import ttest_1samp
+import json
+import copy
+import multiprocessing as mp
+
+def eGSEArun(hit_loci, refer_length):
+    pos_score = 1/len(hit_loci)
+    neg_score = 1/(refer_length - len(hit_loci))
+    runing_score = 0
+    max_score = -999999
+    prev_loci = 0
+    for loci in hit_loci:
+        neg_length = loci - prev_loci
+        runing_score -= neg_score*neg_length
+        runing_score += pos_score
+        if runing_score > max_score:
+            max_score = runing_score
+        prev_loci = loci + 1
+    return max_score
+
+def eSingleRun(go, ref_list):
+    genelist = godict[go]['geneSymbols']
+    tmp = ref_list
+    tmp['gene1_bin'] = np.where(tmp['gene1'].isin(genelist),1,0)
+    tmp['gene2_bin'] = np.where(tmp['gene2'].isin(genelist),1,0)
+    tmp['check'] = tmp.gene1_bin + tmp.gene2_bin
+    if np.where(tmp['check'] == 2,1,0).sum() == 0:
+        return {'GO' : go, 'Observation' : -999, 'z_score' : -999, 'p_value' : 1}
+    else:
+        hit_loci = [ix for ix, va in enumerate(tmp['check']) if va == 2] 
+        refer_length = tmp.shape[0]
+        observed = eGSEArun(hit_loci, refer_length)
+        
+        permutated_scores = []
+        for i in range(1,1000):
+            perm_hit_loci = random.sample(list(range(refer_length)), len(hit_loci))
+            s1 = eGSEArun(perm_hit_loci, refer_length)
+            permutated_scores.append(s1)        
+        z = (observed - np.mean(permutated_scores))/np.std(permutated_scores)
+        permutated_scores.append(observed)
+        sorted_list = np.sort(permutated_scores)[::-1]
+        p = (np.where(sorted_list == observed)[0][0] + 1)/1000
+        return {'GO' : go, 'Observation' : observed, 'function' : godict[go]['function'], 'z_score' : z, 'p_value' : p}
+
+#import data
+#personal network
+ref = pd.read_csv('whole_harm_matrix.csv')
+ref['sum'] = ref.sum(axis = 1)
+#function dictionary
+with open('gobp.json') as json_file:
+    godict = json.load(json_file)
+
+pool = mp.Pool(processes = 20)
+GO_list = list(godict.keys())
+results = []
+start_time = time.time()
+for i in range(len(GO_list)):
+    res = pool.apply_async(eSingleRun, (GO_list[i], ref,))
+    results.append(res)
+pool.close()
+pool.join()
+DF = pd.DataFrame()
+for i in results:
+    tmpDF = pd.DataFrame(i.get(),index = [0])
+    DF = pd.concat([DF, tmpDF],ignore_index=True)
+    
+print('Used: {} sec'.format(time.time()-start_time))
