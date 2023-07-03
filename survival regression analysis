@@ -1,0 +1,64 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import json
+from lifelines import AalenAdditiveFitter, CoxPHFitter
+from lifelines.utils import k_fold_cross_validation
+import matplotlib.ticker as mticker
+with open('gobp.json') as json_file:
+    gobp = json.load(json_file)
+os_data = pd.read_csv('os.csv')
+age = pd.read_csv('age.csv')
+
+def go_cox_regression(stage_1_data,revigo,gobp):
+    concordance_list_stage_1 = []
+    numberofsymbol = []
+    for i in range(len(revigo)):
+        symbol_list = gobp[revigo[i]]['geneSymbols']
+        numberofsymbol.append(len(symbol_list))
+        symbol_list.append('os')
+        symbol_list.append('event')
+        symbol_list.append('age')
+        go_data = stage_1_data[stage_1_data.columns.intersection(symbol_list)]
+        go_data = go_data.dropna()
+        cph = CoxPHFitter(penalizer=0.0001)
+        cph.fit(go_data, duration_col = 'os', event_col = 'event')
+        concordance_list_stage_1.append(cph.concordance_index_)
+    return [concordance_list_stage_1, numberofsymbol]
+
+def print_go_func(concordance_list,revigo,gobp):
+    data = {'GO':[],'function':[],'concordance':[]}
+    concordance_data = pd.DataFrame(data)
+    for i,k in enumerate(concordance_list):
+        if k>0.7 : 
+            concordance_data.loc[revigo[i]] = {'GO':revigo[i],'function':gobp[revigo[i]]['function'],'concordance':k}
+    concordance_data = concordance_data.sort_values(by=['concordance'], ascending=False)
+    for i in range(len(concordance_data)):
+        print(concordance_data.iloc[i]['GO'], concordance_data.iloc[i]['concordance'])
+
+def plt_concordance(concordance_list_stage_1, numberofsymbol, revigo1,title):
+    concordance_list_stage_1.sort(reverse=True)
+    color = ['orange' if x>0.7 else 'dodgerblue' for x in concordance_list_stage_1]
+    X = range(len(revigo1))
+    Y = concordance_list_stage_1
+    plt.figure(figsize=(12,5))
+    plt.scatter(X, Y, c=color)
+    plt.gca().xaxis.set_major_locator(mticker.MultipleLocator(1))
+    plt.axis([-0.8, len(revigo1), 0.3, 1.08])
+    plt.xlabel('GO Number')
+    plt.ylabel('Concordance')
+    plt.title(title)#harmful/protective
+    for i, label in enumerate(numberofsymbol):
+        plt.annotate(label, (X[i], Y[i]))
+    plt.show()
+
+revigo1 = pd.read_csv('revigo/harm_Revigo_BP_TreeMap.csv', header = None)####
+harm_data = pd.read_csv('harm_data.csv')###
+revigo1 = list(revigo1[0]) ##go功能
+harm_data['os'] = list(os_data['os'])
+harm_data['event'] = list(os_data['event'])
+harm_data['age'] = list(age['age_at_initial_pathologic_diagnosis'])
+title1 = 'Concordance of GO in poor prognosis model'
+result1 = go_cox_regression(harm_data,revigo1,gobp)
+print_go_func(result1[0],revigo1,gobp)
+plt_concordance(result1[0], result1[1],revigo1,title1)
