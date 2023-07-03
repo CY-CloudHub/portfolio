@@ -1,0 +1,180 @@
+import pandas as pd
+from itertools import combinations
+import numpy as np
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+from collections import Counter
+import statistics
+import csv
+import networkx as nx
+
+with open('/home/cyulee/lihc/All_genes_in_LIHC.txt') as f:
+    lines = f.readlines()
+    lines = lines[0]
+    gene_name = lines.split('\t')
+    
+name_comb = list(combinations(gene_name,2))
+#print('comb:', len(name_comb), name_comb[0:10])
+
+# reading the file
+my_file = open("/home/cyulee/lihc/All_gene_pair_interaction_z-score_for_LIHC_updated.txt", "r")
+data = my_file.read()
+data_into_list = data.split()
+
+pair_z = []
+for i in data_into_list:
+    a = i.split('|')
+    pair_z.append(a[2])
+
+gene_pair = []
+for i in range(len(name_comb)):
+    gene_pair.append((name_comb[i],pair_z[i]))
+#print('data:', len(gene_pair), gene_pair[0:10])
+
+def cc_count(genes):
+    G = nx.Graph()
+    G.add_edges_from(genes)
+    a = list(nx.connected_components(G))
+    return len(a)
+
+def cutoff(data,cut1,cut2):
+    protect_list = []
+    harm_list = []
+    protect_gene = []
+    harm_gene = []
+    protect_z_list = []
+    harm_z_list = []
+    cut_list = []
+    harm_genepair = []
+    protect_genepair = []
+    na_num = 0
+    for i in range(len(data)):
+        #print(i,float(gene_pair[i][1]))
+        if data[i][1] == 'NA': 
+            na_num += 1
+            continue
+        if float(data[i][1]) >= cut1: 
+            harm_list.append(data[i])
+            harm_gene.append(data[i][0][0])
+            harm_gene.append(data[i][0][1])
+            harm_genepair.append(data[i][0])
+            harm_z_list.append(float(data[i][1]))
+        if float(data[i][1]) <= -(cut2): 
+            protect_list.append(data[i])
+            protect_gene.append(data[i][0][0])
+            protect_gene.append(data[i][0][1])
+            protect_genepair.append(data[i][0])
+            protect_z_list.append(float(data[i][1]))
+    
+    print('NA: ' + str(na_num))
+    harm_cc_num = cc_count(harm_genepair)
+    protect_cc_num = cc_count(protect_genepair)
+    harm_degree = Counter(harm_gene) #算每個基因出現次數
+    harm_degree = harm_degree.most_common() #排列每個基因的出現次數(degree)
+    protect_degree = Counter(protect_gene)
+    protect_degree = protect_degree.most_common()
+    print('harm & proc', len(harm_list), harm_list[0:10], len(protect_list), protect_list[0:10])
+    
+    harm_list = sorted(harm_list, key = lambda s: s[1])
+    protect_list = sorted(protect_list, key = lambda s: s[1])
+#####harm
+    harm_degree_name = []
+    for i in harm_degree:
+        harm_degree_name.append(i[0])
+    #算每個degree出現次數
+    fre_count_harm = []
+    sum_harm = []
+    for i in harm_degree:
+        fre_count_harm.append(i[1])
+    freq_harm = {}
+    for item in fre_count_harm:
+        if (item in freq_harm):
+            freq_harm[item] += 1
+        else:
+            freq_harm[item] = 1  
+
+    X = []
+    y = []
+    r_squ_harm = []
+    for key in freq_harm.keys():
+        X.append(key)
+    for values in freq_harm.values():
+        y.append(values) 
+    #print(y)
+    harm_mean = sum(y) / len(y)
+    harm_median = statistics.median(y)
+
+    X = np.array(X).reshape(-1, 1)
+    X = np.log(X)
+    y = np.array(y)
+    y = np.log(y)
+    
+    lm = LinearRegression()
+    lm.fit(X, y)
+    r_squ_harm = lm.score(X, y)
+    
+    #print(harm_list[0][1])
+    print('r_squ_harm:' + str(r_squ_harm))
+    #plt.bar(freq_harm.keys(), freq_harm.values())
+
+    
+###protect
+    protect_degree_name = []
+    for i in protect_degree:
+        protect_degree_name.append(i[0])   
+    fre_count_protect = []
+    for i in protect_degree:
+        fre_count_protect.append(i[1])
+    freq_protect = {}
+    for item in fre_count_protect:
+        if (item in freq_protect):
+            freq_protect[item] += 1
+        else:
+            freq_protect[item] = 1
+
+
+    X = []
+    y = []
+    r_squ_protect = []
+    for key in freq_protect.keys():
+        X.append(key)
+    for values in freq_protect.values():
+        y.append(values)  
+    #print(y)        
+    protect_mean = sum(y) / len(y)
+    protect_median = statistics.median(y)
+    
+    X = np.array(X).reshape(-1, 1)
+    X = np.log(X)
+    y = np.array(y)
+    y = np.log(y)
+
+    lm = LinearRegression()
+    lm.fit(X, y)
+    r_squ_protect = lm.score(X, y)
+    print('r_squ_protect: ' + str(r_squ_protect))
+    
+    result1 = []
+    result2 = []
+    for i in harm_degree[0:30]:
+        result1.append(i[0])
+    for i in protect_degree[0:30]:
+        result2.append(i[0])
+    
+    
+    return [harm_genepair,protect_genepair,harm_degree_name,protect_degree_name]
+
+
+a = cutoff(gene_pair,3.2,2.97)
+
+s = ['harm_genepair.txt', 'protect_genepair.txt','harm_degree_name.txt','protect_degree_name.txt']
+
+for i in range(len(s)):
+    with open(s[i],'w',newline='') as wfile:
+        writer = csv.writer(wfile)
+        writer.writerow(a[i])
+
+
+wfile.close()
+f.close()
+my_file.close()
