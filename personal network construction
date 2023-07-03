@@ -1,0 +1,80 @@
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(gtools)
+library(tidyverse)
+library(survminer)
+library(rms)
+library(hgnc)
+
+getRegionCox<-function(model, mediator, VarMin, VarMax, increment, alpha=0.05,printall=F,plotHR=F,...)
+{
+  effectvar<-NA
+  interact<-length(model$coefficients)
+  if(names(model$coefficients)[1]==mediator){effectvar<-names(model$coefficients)[2]}
+  if(names(model$coefficients)[2]==mediator){effectvar<-names(model$coefficients)[1]}
+  mediatorvector<-seq(VarMin,VarMax,by=increment)
+  slope<-rep(NA,length(mediatorvector))
+  se<-rep(NA,length(mediatorvector))
+  for (i in 1:length(mediatorvector))
+  {
+    slope[i]<-model$coefficients[effectvar]+mediatorvector[i]*model$coefficients[interact]
+    se[i]<-sqrt(model$var[effectvar,effectvar]+2*mediatorvector[i]*model$var[effectvar,interact]+mediatorvector[i]*mediatorvector[i]*model$var[interact,interact])
+    pval<-(1-pnorm(abs(slope[i]/se[i])))*2
+    if(pval<alpha & !printall)print(paste("If ", mediator, " is equal to ",mediatorvector[i]," the slope of ",effectvar," (=",signif(slope[i],4),")is significantly different from 0 (p=",signif(pval,4),")",sep=""))
+    if(printall)print(paste("If ", mediator, " is equal to ",mediatorvector[i]," the slope of ",effectvar," is ",signif(slope[i],4)," (p=",signif(pval,4),")",sep=""))
+    return(signif(pval,4))
+  }
+  ciupper<-slope+qnorm(0.975)*se
+  cilower<-slope-qnorm(0.975)*se
+  if(!plotHR)
+  {
+    plot(mediatorvector,slope,type="l",xlab=mediator,ylab=paste("Effect estimator of ",effectvar),...)
+    lines(mediatorvector,ciupper,lty=2)
+    lines(mediatorvector,cilower,lty=2)
+    abline(h=0,lty=3)
+  }
+  if(plotHR)
+  {
+    plot(mediatorvector,exp(slope),type="l",xlab=mediator,ylab=paste("HR of ",effectvar),...)
+    lines(mediatorvector,exp(ciupper),lty=2)
+    lines(mediatorvector,exp(cilower),lty=2)
+    abline(h=1,lty=3)
+  }
+}
+
+InteractionMatrix <- function(gene_pairs, expression_data, id_os){
+  result_matrix <- data.frame()
+  for (i in 1:nrow(gene_pairs)){
+    print(i)
+    result1 <- c()
+    result1 <- append(result1,gene_pairs[i,1])
+    result1 <- append(result1,gene_pairs[i,2])
+    result2 <- c()
+    result2 <- append(result2,gene_pairs[i,2])
+    result2 <- append(result2,gene_pairs[i,1])
+    
+    A <- expression_data[,gene_pairs$gene1[i]]
+    b <- expression_data[,gene_pairs$gene2[i]]
+    cox <- cph(Surv(id_os$os, id_os$event) ~ A*b , surv=T)
+    
+    for (k in 1:nrow(id_os)){
+      coxregion1 <- getRegionCox(cox,'A', A[k], A[k], 0.00, alpha=0.05, printall=T)
+      if ( coxregion1 > 0.05 || is.na(coxregion1) == TRUE ) {result1 <- append(result1,0)}
+      else{result1 <- append(result1,1)}
+      coxregion2 <- getRegionCox(cox,'b', b[k], b[k], 0.00, alpha=0.05, printall=T)
+      if ( coxregion2 > 0.05 || is.na(coxregion2) == TRUE) {result2 <- append(result2,0)}
+      else{result2 <- append(result2,1)}
+    }
+    result_matrix <- rbind(result_matrix,result1)
+    result_matrix <- rbind(result_matrix,result2)}
+  colnames(result_matrix) <- c('gene1','gene2',id_os$sample)
+  return(result_matrix)
+}
+
+
+expression_data <- read.table(file='/home/cyulee/lihc/rscript/harm_final_data.csv', sep = '\t',header = T)
+gene_pairs <- read.table(file='/home/cyulee/lihc/rscript/n_harm_frame.csv', sep = ',',header = T)
+id_os <- read.table(file='/home/cyulee/lihc/rscript/new_id_os.csv', sep = ',',header = T) #id and overall survival data
+result_matrix <- InteractionMatrix(gene_pairs, expression_data, id_os)
